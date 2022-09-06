@@ -18,8 +18,7 @@
     </plugins>
   </build>
   <modules>
-    <module>service-provider-interface</module>
-    <module>service-provider</module>
+    <module>spi</module>
   </modules>
   <packaging>pom</packaging>
 
