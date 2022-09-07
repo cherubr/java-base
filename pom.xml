@@ -19,6 +19,7 @@
   </build>
   <modules>
     <module>spi</module>
+      <module>flowable</module>
   </modules>
   <packaging>pom</packaging>
 
