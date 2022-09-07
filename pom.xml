@@ -19,6 +19,7 @@
   </build>
   <modules>
     <module>spi</module>
+    <module>server-app</module>
   </modules>
   <packaging>pom</packaging>
 
