@@ -1,6 +1,7 @@
 package com.ahut;
 
 import org.flowable.engine.*;
+import org.flowable.engine.history.HistoricActivityInstance;
 import org.flowable.engine.impl.cfg.StandaloneProcessEngineConfiguration;
 import org.flowable.engine.repository.Deployment;
 import org.flowable.engine.repository.ProcessDefinition;
@@ -19,12 +20,15 @@ import java.util.function.Consumer;
  */
 public class App 
 {
-    private static ProcessEngine processEngine;
+    private static volatile ProcessEngine processEngine;
     public static void main( String[] args )
     {
         App app = new App();
         app.validEngine();
-        app.init();
+        ProcessInstance processInstance = app.init();
+        app.queryTask();
+        app.submit();
+        app.queryHistory(processInstance);
     }
 
     /**
@@ -34,23 +38,29 @@ public class App
      * ProcessEngineConfiguration需要的最低配置是与数据库的 JDBC 连接
      * @return
      */
-    private   ProcessEngine processEngine(){
+   static {
         ProcessEngineConfiguration cfg = new StandaloneProcessEngineConfiguration()
                 .setJdbcUrl("jdbc:h2:mem:flowable;DB_CLOSE_DELAY=-1")
                 .setJdbcUsername("sa")
                 .setJdbcPassword("")
                 .setJdbcDriver("org.h2.Driver")
                 .setDatabaseSchemaUpdate(ProcessEngineConfiguration.DB_SCHEMA_UPDATE_TRUE);
-        ProcessEngine processEngine = cfg.buildProcessEngine();
-        return processEngine;
+        if(processEngine == null){
+            processEngine = cfg.buildProcessEngine();
+        }
     }
 
     public RepositoryService repositoryService(){
-        ProcessEngine processEngine = processEngine();
+
         RepositoryService repositoryService = processEngine.getRepositoryService();
         return repositoryService;
     }
 
+    /**
+     * 流程引擎会将 XML 文件存储在数据库中，以便在需要时随时检索
+     * 流程定义被解析为一个内部的、可执行的对象模型，因此流程实例可以从它开始
+     * @return
+     */
     public  Deployment deployment(){
         RepositoryService repositoryService = repositoryService();
         Deployment deployment = repositoryService.createDeployment()
@@ -58,6 +68,10 @@ public class App
                 .deploy();
         return deployment;
     }
+
+    /**
+     * API 查询来验证引擎是否知道流程定义（并了解一些关于 API 的知识）。这是通过RepositoryService创建一个新的ProcessDefinitionQuery对象来完成的
+     */
     public  void validEngine(){
         RepositoryService repositoryService = repositoryService();
         Deployment deployment = deployment();
@@ -67,7 +81,11 @@ public class App
         System.out.println("Found process definition : " + processDefinition.getName());
     }
 
-    public void init(){
+    /**
+     * 初始化任务
+     * 我们可以通过RuntimeService启动一个流程实例。收集到的数据作为java.util.Map实例传递，其中键是稍后将用于检索变量的标识符。流程实例使用key启动
+     */
+    public ProcessInstance init(){
         Scanner scanner= new Scanner(System.in);
 
         System.out.println("Who are you?");
@@ -78,10 +96,17 @@ public class App
 
         System.out.println("Why do you need them?");
         String description = scanner.nextLine();
-        start(employee,nrOfHolidays,description);
+        ProcessInstance processInstance = start(employee, nrOfHolidays, description);
+        return processInstance;
     }
-    public void start(String employee,int nrOfHolidays,String description){
-        ProcessEngine processEngine = processEngine();
+
+    /**
+     * 我们可以通过RuntimeService启动一个流程实例。收集到的数据作为java.util.Map实例传递，其中键是稍后将用于检索变量的标识符。流程实例使用key启动
+     * @param employee
+     * @param nrOfHolidays
+     * @param description
+     */
+    public ProcessInstance start(String employee,int nrOfHolidays,String description){
         RuntimeService runtimeService = processEngine.getRuntimeService();
 
         Map<String, Object> variables = new HashMap<String, Object>();
@@ -90,18 +115,52 @@ public class App
         variables.put("description", description);
         ProcessInstance processInstance =
                 runtimeService.startProcessInstanceByKey("holidayRequest", variables);
+        return processInstance;
     }
 
     /**
      * 查询任务
      */
     public void queryTask(){
-        ProcessEngine processEngine = processEngine();
         TaskService taskService = processEngine.getTaskService();
         List<Task> tasks = taskService.createTaskQuery().taskCandidateGroup("managers").list();
         System.out.println("You have " + tasks.size() + " tasks:");
         for (int i=0; i<tasks.size(); i++) {
             System.out.println((i+1) + ") " + tasks.get(i).getName());
+        }
+    }
+
+    /**
+     * 提交任务,完成任务
+     */
+    public void submit(){
+        Scanner scanner= new Scanner(System.in);
+        System.out.println("Which task would you like to complete?");
+        int taskIndex = Integer.valueOf(scanner.nextLine());
+        TaskService taskService = processEngine.getTaskService();
+        List<Task> tasks = taskService.createTaskQuery().taskCandidateGroup("managers").list();
+        Task task = tasks.get(taskIndex - 1);
+        Map<String, Object> processVariables = taskService.getVariables(task.getId());
+        System.out.println(processVariables.get("employee") + " wants " +
+                processVariables.get("nrOfHolidays") + " of holidays. Do you approve this?");
+        boolean approved = scanner.nextLine().toLowerCase().equals("y");
+        Map variables = new HashMap<String, Object>();
+        variables.put("approved", approved);
+        taskService.complete(task.getId(), variables);
+    }
+
+    public void queryHistory(ProcessInstance processInstance){
+        HistoryService historyService = processEngine.getHistoryService();
+        List<HistoricActivityInstance> activities =
+                historyService.createHistoricActivityInstanceQuery()
+                        .processInstanceId(processInstance.getId())
+                        .finished()
+                        .orderByHistoricActivityInstanceEndTime().asc()
+                        .list();
+
+        for (HistoricActivityInstance activity : activities) {
+            System.out.println(activity.getActivityId() + " took "
+                    + activity.getDurationInMillis() + " milliseconds");
         }
     }
 }
