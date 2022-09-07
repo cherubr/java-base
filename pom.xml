@@ -19,7 +19,11 @@
   </build>
   <modules>
     <module>spi</module>
+<<<<<<< HEAD
     <module>server-app</module>
+=======
+      <module>flowable</module>
+>>>>>>> refs/remotes/origin/master
   </modules>
   <packaging>pom</packaging>
 
